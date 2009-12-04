@@ -144,4 +144,9 @@
 ;; some nested infix exp
 (check-expect (infix->prefix '((1 + 2) / 2.5 + b - c) standart-operations)
               '(+ (/ (+ 1 2) 2.5) (- b c)))
+
+(check-expect (infix->prefix '((1 + (55.27 / x)) / 2.5 + b - c)
+                             standart-operations)
+              '(+ (/ (+ 1 (/ 55.27 x)) 2.5) (- b c)))
+
 (test)
