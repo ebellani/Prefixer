@@ -14,7 +14,7 @@
 (require srfi/1) ;; list-index
 
 ;; Default operators
-(define separators (list '+ '- '* '/))
+(define standart-operations (list '+ '- '* '/))
 
 
 ;; remove-parens : (listof X) -> X
@@ -109,6 +109,9 @@
 (check-expect (infix->prefix-composed '(x + (1 - 4)) '-)
               '(x + (- 1 4)))
 
+(check-expect (infix->prefix-composed '(x + (1 - (2 - 5))) '-)
+              '(x + (- 1 (- 2 5))))
+
 (check-expect (infix->prefix-composed '(x + 1 - b * c) '*)
               '(* (x + 1 - b) c))
 
@@ -119,4 +122,26 @@
               '(+ x (1 - b * c)))
 
 
+;; infix->prefix : (listof X) (listof symbol) -> (listof X)
+;; uses infix->prefix-composed to generate a prefix expression
+(define (infix->prefix infix-exp separators0)
+  (local [(define (infix->prefix-acc result separators)
+            (cond
+              [(empty? separators) result]
+              [else
+               (infix->prefix-acc
+                (infix->prefix-composed result (first separators))
+                (rest separators))]))]
+    (infix->prefix-acc infix-exp separators0)))
+
+;; some vanilla infix exp
+(check-expect (infix->prefix '(1 + 2 * 3 + 5) standart-operations)
+              '(+ 1 (* 2 3) 5))
+
+(check-expect (infix->prefix '(1 + 2 / 2.5 + b - c) standart-operations)
+              '(+ 1 (/ 2 2.5) (- b c)))
+
+;; some nested infix exp
+(check-expect (infix->prefix '((1 + 2) / 2.5 + b - c) standart-operations)
+              '(+ (/ (+ 1 2) 2.5) (- b c)))
 (test)
