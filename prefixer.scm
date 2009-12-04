@@ -90,8 +90,33 @@
 ;; infix->prefix-composed : (listof X) symbol -> (listof X)
 ;; applies infix->prefix-simple to every sublist
 (define (infix->prefix-composed a-list0 separator)
-  $expr$ ---)
+  (cond
+    [(or (not (list? a-list0))
+         (empty? a-list0))]
+    [else
+     (let ([a-list (map (λ (sublist-or-atom)
+                          (cond
+                            [(list? sublist-or-atom)
+                             (infix->prefix-composed sublist-or-atom
+                                                     separator)]
+                            [else sublist-or-atom]))
+                        a-list0)])
+       (cond
+         [(false? (member separator (rest a-list))) a-list]
+         [else (infix->prefix-simple a-list separator)]))]))
 
+
+(check-expect (infix->prefix-composed '(x + (1 - 4)) '-)
+              '(x + (- 1 4)))
+
+(check-expect (infix->prefix-composed '(x + 1 - b * c) '*)
+              '(* (x + 1 - b) c))
+
+(check-expect (infix->prefix-composed '(x + 1 - b * c) '-)
+              '(- (x + 1) (b * c)))
+
+(check-expect (infix->prefix-composed '(x + 1 - b * c) '+)
+              '(+ x (1 - b * c)))
 
 
 (test)
