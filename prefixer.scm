@@ -92,19 +92,6 @@
 (define (infix->prefix-composed a-list0 separator)
   $expr$ ---)
 
-(defun separate-tree (lst separator test)
-  "Apply separate-list on all sublists"
-  (if (or (not (consp lst)) (eql (first lst) 'quote))
-      lst
-      (progn
-       (setf lst (mapcar #'(lambda (x) 
-                             (if (not (consp x))
-                                 x
-                                 (separate-tree x separator test)))
-                         lst))
-       (if (not (find separator (rest lst)))
-           lst
-           (separate-list lst separator test)))))
 
 
 (test)
