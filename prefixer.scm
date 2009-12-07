@@ -1,3 +1,4 @@
+#!/usr/bin/mzscheme
 #lang scheme
 ;;;; Scheme infix/prefix conversion utility
 ;;;
@@ -11,7 +12,7 @@
 ;;; 
 
 (require test-engine/scheme-tests)
-(require srfi/1) ;; list-index
+(require srfi/1) ;; for list-index
 
 ;; Default operators
 (define standart-operations (list '+ '- '* '/))
@@ -39,7 +40,7 @@
               '(x 1 b))
 
 
-;; infix->prefix-simple : (listof X) symbol -> (listof X) or false
+;; infix->prefix-simple : infix-expression symbol -> (listof X) or false
 ;; Returns list of sub-sequences defined by separator,
 ;; Ex: (x + 1 - b * c) breaked by the * symbol should be
 ;; (* (x + 1 - b) c)
@@ -88,7 +89,7 @@
 (check-expect (infix->prefix-simple '(1 + 1) '-)
               '(- (1 + 1)))
 
-;; infix->prefix-composed : (listof X) symbol -> (listof X)
+;; infix->prefix-composed : infix-expression symbol -> prefix-expression
 ;; applies infix->prefix-simple to every sublist
 (define (infix->prefix-composed initial-infix-expression separator)
   (cond
@@ -123,9 +124,9 @@
               '(+ x (1 - b * c)))
 
 
-;; infix->prefix : (listof X) (listof symbol) -> (listof X)
+;; infix->prefix : infix-expression (listof symbol) -> prefix-expression
 ;; uses infix->prefix-composed to generate a prefix expression
-(define (infix->prefix infix-exp separators0)
+(define (infix->prefix infix-exp (separators0 standart-operations))
   (local [(define (infix->prefix-acc result separators)
             (cond
               [(empty? separators) result]
@@ -136,39 +137,22 @@
     (infix->prefix-acc infix-exp separators0)))
 
 ;; some vanilla infix exp
-(check-expect (infix->prefix '(1 + 2 * 3 + 5) standart-operations)
+(check-expect (infix->prefix '(1 + 2 * 3 + 5))
               '(+ 1 (* 2 3) 5))
 
-(check-expect (infix->prefix '(1 + 2 / 2.5 + b - c) standart-operations)
+(check-expect (infix->prefix '(1 + 2 / 2.5 + b - c))
               '(+ 1 (/ 2 2.5) (- b c)))
 
 ;; some nested infix exp
-(check-expect (infix->prefix '((1 + 2) / 2.5 + b - c) standart-operations)
+(check-expect (infix->prefix '((1 + 2) / 2.5 + b - c))
               '(+ (/ (+ 1 2) 2.5) (- b c)))
 
-(check-expect (infix->prefix '((1 + (55.27 / x)) / 2.5 + b - c)
-                             standart-operations)
+(check-expect (infix->prefix '((1 + (55.27 / x)) / 2.5 + b - c))
               '(+ (/ (+ 1 (/ 55.27 x)) 2.5) (- b c)))
 
-;; reducible-expression? : ((listof X) or X) (listof symbol) -> boolean
-;; checks if an expression contains only numbers
-;; besides the initial operator. Returns false
-;; if the expression is not a list
-(define (reducible-expression? expression (operators standart-operations))
-  (and (list? expression)
-       (or (andmap number? expression)
-           (and (not (false? (member (first expression)
-                                     operators)))
-                (andmap number? (rest expression))))))
 
-(check-expect (reducible-expression? (list '+ 1 2 2.4)) true)
-(check-expect (reducible-expression? 4) false)
-(check-expect (reducible-expression? '(1 2)) true)
-(check-expect (reducible-expression? '*) false)
-(check-expect (reducible-expression? '(- 1 x 2.4)) false)
-(check-expect (reducible-expression? '((+ 1 5) 2)) false)
 
-;; reduce-all : (listof X) -> (listof X)
+;; reduce-all : prefix-expression -> prefix-expression or number
 ;; Reduce all expressions as much as possible.
 ;; Ex: (* (+ 1 5) 2) -> 12
 ;;     (+ (* 3 4) b) -> (+ 12 b)
@@ -181,7 +165,18 @@
               [(equal? symbol '/) /]
               [(equal? symbol '-) -]))
           
-          ;; reduce-expression : (listof X) -> (listof X)
+          ;; reducible-expression? : (prefix-expression or number) 
+          ;;                         (listof symbol) -> boolean
+          ;; checks if an expression contains only numbers
+          ;; besides the initial operator. Returns false
+          ;; if the expression is not a list
+          (define (reducible-expression? expression (operators standart-operations))
+            (and (list? expression)
+                 (and (not (false? (member (first expression)
+                                           operators)))
+                      (andmap number? (rest expression)))))
+          
+          ;; reduce-expression : prefix-expression -> prefix-expression or number
           ;; check if there is an operator, if so evaluate
           ;; the expression. If not just return it.
           (define (reduce-expression expression (operators standart-operations))
@@ -192,59 +187,104 @@
                      (get-function (first expression))
                      (rest expression))]))
           
+          ;; check-for-termination : prefix-expression -> prefix-expression or number
+          ;; verifies if a reduced exp is different than the initial
+          ;; if it is continue with the reduction. Else stop.
+          (define (check-for-termination expression)
+            (cond
+              [(equal? expression initial-expression) expression]
+              [else (reduce-all expression)]))
+          
           (define (reduce expression already-parsed-pieces)
             (cond
               [(not (list? expression)) expression]
               [(empty? expression) already-parsed-pieces]
               [(reducible-expression? expression)
-               (reduce-all (append already-parsed-pieces
-                                   (reduce-expression expression)))]
-              [(reducible-expression? (first expression))
-               (reduce-all (append already-parsed-pieces
-                                   (list (reduce-expression (first expression)))
-                                   (rest expression)))]
+               (check-for-termination (append already-parsed-pieces
+                                              (reduce-expression expression)))]
               [(list? (first expression))
-               (reduce (rest expression)
-                       (append already-parsed-pieces
-                               (list (reduce (first expression) empty))))]
+               (check-for-termination
+                (append already-parsed-pieces
+                        (list (reduce (first expression) empty))
+                        (rest expression)))]
               [else
                (reduce (rest expression)
                        (append already-parsed-pieces
                                (list (first expression))))]))]
     (reduce initial-expression empty)))
 
-;(cond
-;  [(empty? expression) initial-expression]
-;  [(reducible-expression? expression)
-;   (reduce-expression expression)]
-;  [(list? (first expression))
-;   (append
-;    (reduce
-;     (rest expression)
-;     (reduce (first expression) already-parsed-pieces)))]
-;  [else
-;   (reduce (rest expression)
-;           (append (list already-parsed-pieces)
-;                   (list (first expression))))])
-
 ;; simple expressions
 
-;(check-expect (reduce-all '(+ 1 5))
-;              6)
-;
-;(check-expect (reduce-all '(* (+ 1 5) 2)) 12)
-;
-;(check-expect (reduce-all '(- (/ (+ 1 5) 3) 5)) -3)
-;(check-expect (reduce-all '(+ (/ 1 5) 3/25)) 8/25)
+(check-expect (reduce-all 8)
+              8)
 
-;; expressions with variable
-;(check-expect (reduce-all '(* (+ 1 5) a))
-;              '(* 6 a))
+(check-expect (reduce-all empty)
+              empty)
 
-(check-expect (reduce-all '(- (/ (+ 1 5) x) 5))
+(check-expect (reduce-all '(+ 1 5))
+              6)
+
+(check-expect (reduce-all '(* (+ 1 5) 2)) 12)
+
+(check-expect (reduce-all '(- (/ (+ 1 5) 3) 5)) -3)
+(check-expect (reduce-all '(+ (/ 1 5) 3/25)) 8/25)
+
+;; expressions with variables
+(check-expect (reduce-all '(* (+ 1 5) a))
+              '(* 6 a))
+
+(check-expect (reduce-all '(- (/ 6 x) 5))
               '(- (/ 6 x) 5)) 
 
+(check-expect (reduce-all '(+ (/ 1 5) (* (+ 1 5) x)))
+              '(+ 1/5 (* 6 x)))
+
+;; string->infix-expression : string -> infix-expression
+;; takes a string and reads it into an infix expression
+;; Ex: "1 + (2 * 4)" -> (1 + (2 * 4))
+(define (string->infix-expression the-string)
+  (cond
+    [(or (not (equal? (string-ref the-string 0) #\())
+         (not (equal? (string-ref the-string
+                                  (sub1 (string-length the-string))) #\))))
+         (read (open-input-string (string-append "(" the-string ")")))]
+    [else
+     (read (open-input-string the-string))]))
+
+(check-expect (string->infix-expression "1 + (2 * 4)")
+              '(1 + (2 * 4)))
+
+(check-expect (string->infix-expression "1 + 1")
+              '(1 + 1))
 
 
+(define (main (parameters (current-command-line-arguments)))
+  (let ([prefix-expression
+         (infix->prefix
+          (string->infix-expression
+           (read-line (open-input-file (vector-ref parameters 0)))))])
+    (cond
+      [(equal? (vector-ref parameters (sub1 (vector-length parameters))) "-r")
+       (display (reduce-all prefix-expression))
+       (newline)]
+      [else
+       (display prefix-expression)
+       (newline)])))
+
+;; should be 3/2
+(check-expect (main #("expression-without-letters.txt" "-r"))
+              (void))
+
+;; should be (/ (+ 1 2) 2)
+(check-expect (main #("expression-without-letters.txt"))
+              (void))
+
+;; should be (+ 4.4 (- b c))
+(check-expect (main #("expression-with-letters.txt" "-r"))
+              (void))
+
+;; should be (+ (/ (+ 1 (/ 40 4)) 2.5) (- b c))
+(check-expect (main #("expression-with-letters.txt"))
+              (void))
 
 (test)
