@@ -43,27 +43,28 @@
 ;; Returns list of sub-sequences defined by separator,
 ;; Ex: (x + 1 - b * c) breaked by the * symbol should be
 ;; (* (x + 1 - b) c)
-(define (infix->prefix-simple a-list0 separator)
-  (local [(define (separate-list a-list result)
+(define (infix->prefix-simple initial-infix-expression separator)
+  (local [(define (separate-list infix-expression result)
             (let ([position (list-index (λ (symbol)
                                           (equal? symbol separator))
-                                        a-list)])
+                                        infix-expression)])
               (cond
-                [(empty? a-list) result]
-                [(false? position) (append result (list a-list))]
+                [(empty? infix-expression) result]
+                [(false? position) (append result (list infix-expression))]
                 [else
                  (separate-list
-                  (list-tail a-list
+                  (list-tail infix-expression
                              (add1 position))
                   (append result
-                          (list (take a-list position))))])))]
+                          (list (take infix-expression position))))])))]
     (cond
-      [(or (not (list? a-list0)) (empty? a-list0))
-       a-list0]
+      [(or (not (list? initial-infix-expression)) (empty? initial-infix-expression))
+       initial-infix-expression]
       [else
        (let ([initial-list
-              (cond [(equal? (first a-list0) separator) (rest a-list0)]
-                    [else a-list0])])
+              (cond [(equal? (first initial-infix-expression) separator) 
+                     (rest initial-infix-expression)]
+                    [else initial-infix-expression])])
          (map remove-parens
               (separate-list initial-list
                              (list separator))))])))
@@ -89,21 +90,21 @@
 
 ;; infix->prefix-composed : (listof X) symbol -> (listof X)
 ;; applies infix->prefix-simple to every sublist
-(define (infix->prefix-composed a-list0 separator)
+(define (infix->prefix-composed initial-infix-expression separator)
   (cond
-    [(or (not (list? a-list0))
-         (empty? a-list0))]
+    [(or (not (list? initial-infix-expression))
+         (empty? initial-infix-expression))]
     [else
-     (let ([a-list (map (λ (sublist-or-atom)
-                          (cond
-                            [(list? sublist-or-atom)
-                             (infix->prefix-composed sublist-or-atom
-                                                     separator)]
-                            [else sublist-or-atom]))
-                        a-list0)])
+     (let ([infix-expression (map (λ (sublist-or-atom)
+                                    (cond
+                                      [(list? sublist-or-atom)
+                                       (infix->prefix-composed sublist-or-atom
+                                                               separator)]
+                                      [else sublist-or-atom]))
+                                  initial-infix-expression)])
        (cond
-         [(false? (member separator (rest a-list))) a-list]
-         [else (infix->prefix-simple a-list separator)]))]))
+         [(false? (member separator (rest infix-expression))) infix-expression]
+         [else (infix->prefix-simple infix-expression separator)]))]))
 
 
 (check-expect (infix->prefix-composed '(x + (1 - 4)) '-)
@@ -148,5 +149,102 @@
 (check-expect (infix->prefix '((1 + (55.27 / x)) / 2.5 + b - c)
                              standart-operations)
               '(+ (/ (+ 1 (/ 55.27 x)) 2.5) (- b c)))
+
+;; reducible-expression? : ((listof X) or X) (listof symbol) -> boolean
+;; checks if an expression contains only numbers
+;; besides the initial operator. Returns false
+;; if the expression is not a list
+(define (reducible-expression? expression (operators standart-operations))
+  (and (list? expression)
+       (or (andmap number? expression)
+           (and (not (false? (member (first expression)
+                                     operators)))
+                (andmap number? (rest expression))))))
+
+(check-expect (reducible-expression? (list '+ 1 2 2.4)) true)
+(check-expect (reducible-expression? 4) false)
+(check-expect (reducible-expression? '(1 2)) true)
+(check-expect (reducible-expression? '*) false)
+(check-expect (reducible-expression? '(- 1 x 2.4)) false)
+(check-expect (reducible-expression? '((+ 1 5) 2)) false)
+
+;; reduce-all : (listof X) -> (listof X)
+;; Reduce all expressions as much as possible.
+;; Ex: (* (+ 1 5) 2) -> 12
+;;     (+ (* 3 4) b) -> (+ 12 b)
+(define (reduce-all initial-expression)
+  (local [;; get-function : symbol -> (X..N -> X)
+          (define (get-function symbol)
+            (cond
+              [(equal? symbol '*) *]
+              [(equal? symbol '+) +]
+              [(equal? symbol '/) /]
+              [(equal? symbol '-) -]))
+          
+          ;; reduce-expression : (listof X) -> (listof X)
+          ;; check if there is an operator, if so evaluate
+          ;; the expression. If not just return it.
+          (define (reduce-expression expression (operators standart-operations))
+            (cond
+              [(false? (member (first expression)
+                               operators)) expression]
+              [else (apply
+                     (get-function (first expression))
+                     (rest expression))]))
+          
+          (define (reduce expression already-parsed-pieces)
+            (cond
+              [(not (list? expression)) expression]
+              [(empty? expression) already-parsed-pieces]
+              [(reducible-expression? expression)
+               (reduce-all (append already-parsed-pieces
+                                   (reduce-expression expression)))]
+              [(reducible-expression? (first expression))
+               (reduce-all (append already-parsed-pieces
+                                   (list (reduce-expression (first expression)))
+                                   (rest expression)))]
+              [(list? (first expression))
+               (reduce (rest expression)
+                       (append already-parsed-pieces
+                               (list (reduce (first expression) empty))))]
+              [else
+               (reduce (rest expression)
+                       (append already-parsed-pieces
+                               (list (first expression))))]))]
+    (reduce initial-expression empty)))
+
+;(cond
+;  [(empty? expression) initial-expression]
+;  [(reducible-expression? expression)
+;   (reduce-expression expression)]
+;  [(list? (first expression))
+;   (append
+;    (reduce
+;     (rest expression)
+;     (reduce (first expression) already-parsed-pieces)))]
+;  [else
+;   (reduce (rest expression)
+;           (append (list already-parsed-pieces)
+;                   (list (first expression))))])
+
+;; simple expressions
+
+;(check-expect (reduce-all '(+ 1 5))
+;              6)
+;
+;(check-expect (reduce-all '(* (+ 1 5) 2)) 12)
+;
+;(check-expect (reduce-all '(- (/ (+ 1 5) 3) 5)) -3)
+;(check-expect (reduce-all '(+ (/ 1 5) 3/25)) 8/25)
+
+;; expressions with variable
+;(check-expect (reduce-all '(* (+ 1 5) a))
+;              '(* 6 a))
+
+(check-expect (reduce-all '(- (/ (+ 1 5) x) 5))
+              '(- (/ 6 x) 5)) 
+
+
+
 
 (test)
