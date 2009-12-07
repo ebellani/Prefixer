@@ -286,5 +286,5 @@
 ;; should be (+ (/ (+ 1 (/ 40 4)) 2.5) (- b c))
 (check-expect (main #("expression-with-letters.txt"))
               (void))
-
-(test)
+(main)
+;(test)
